@@ -295,17 +295,6 @@
             margin-top: 8px;
         }
 
-        .debug-info {
-            background: #f3f4f6;
-            padding: 10px;
-            border-radius: 8px;
-            margin-top: 10px;
-            font-size: 12px;
-            color: #4b5563;
-            max-height: 150px;
-            overflow-y: auto;
-        }
-
         @media (max-width: 576px) {
             body {
                 padding: 10px;
@@ -330,22 +319,22 @@
             <p>กรุณากรอกข้อมูลให้ครบถ้วน</p>
         </div>
 
-        <form id="mainForm" onsubmit="event.preventDefault(); handleForm(this);">
+        <form id="mainForm" onsubmit="handleSubmit(event)">
             
-            <input type="hidden" name="lineUserId" id="lineUserId" value="N/A">
+            <input type="hidden" name="lineUserId" id="lineUserId" value="">
 
             <div class="mb-3">
                 <label class="form-label">
                     <span>👤</span> ชื่อ-นามสกุล
                 </label>
-                <input type="text" name="name" class="form-control" placeholder="ระบุชื่อของคุณ" required>
+                <input type="text" name="name" id="name" class="form-control" placeholder="ระบุชื่อของคุณ" required>
             </div>
 
             <div class="mb-3">
                 <label class="form-label">
                     <span>📞</span> เบอร์โทรศัพท์
                 </label>
-                <input type="tel" name="phone" class="form-control" placeholder="08x-xxxxxxx" required>
+                <input type="tel" name="phone" id="phone" class="form-control" placeholder="08x-xxxxxxx" required>
             </div>
 
             <div class="mb-3">
@@ -373,7 +362,7 @@
                 <label class="form-label">
                     <span>📝</span> รายละเอียดเพิ่มเติม
                 </label>
-                <textarea name="details" class="form-control" placeholder="ระบุรายละเอียดเพิ่มเติม (ถ้ามี)"></textarea>
+                <textarea name="details" id="details" class="form-control" placeholder="ระบุรายละเอียดเพิ่มเติม (ถ้ามี)"></textarea>
             </div>
             
             <button type="submit" id="submitBtn" class="btn-submit">
@@ -385,7 +374,6 @@
                 <div id="lineNotifyBadge" class="line-notify-badge hidden">
                     ✉️ จะส่งการแจ้งเตือนไปยัง LINE
                 </div>
-                <div id="debugInfo" class="debug-info hidden"></div>
             </div>
         </form>
     </div>
@@ -419,86 +407,64 @@
 </div>
 
 <script>
+    const liffId = '2008933743-UuRrgT1t';
+    let userId = '';
+    let userProfile = null;
+
     const subData = {
         'ธรรมยาตรา': ['3 ม.ค. โลตัสแลนด์', '7 ม.ค. คลองบางนางแท่น', '11 ม.ค. วัดสองพี่น้อง', '14 ม.ค. วัดโบสถ์บน','18 ม.ค. บางปลา'],
         'จุดประทีป': ['B1', 'B2', 'B3'],
         'ตักบาตร': ['C1', 'C2', 'C3', 'C4', 'C5']
     };
 
-    let liffInitialized = false;
-    let userProfile = null;
-
-    function addDebugLog(message) {
-        const debugEl = document.getElementById('debugInfo');
-        debugEl.classList.remove('hidden');
-        const timestamp = new Date().toLocaleTimeString('th-TH');
-        debugEl.innerHTML += `[${timestamp}] ${message}<br>`;
-        debugEl.scrollTop = debugEl.scrollHeight;
-        console.log(message);
-    }
-
-    async function initLiff() {
+    // ฟังก์ชันหลักสำหรับเริ่มต้น LIFF
+    function main() {
         const statusEl = document.getElementById('lineStatus');
         const notifyBadge = document.getElementById('lineNotifyBadge');
-        
-        try {
-            addDebugLog('🔄 เริ่มต้น LIFF...');
-            
-            // ตรวจสอบว่า LIFF SDK โหลดแล้วหรือยัง
-            if (typeof liff === 'undefined') {
-                throw new Error('LIFF SDK ไม่ถูกโหลด');
-            }
-            
-            addDebugLog('📱 กำลังเชื่อมต่อ LIFF ID: 2008933743-UuRrgT1t');
-            
-            await liff.init({ 
-                liffId: "2008933743-UuRrgT1t"
+
+        // 1. LIFF init
+        liff.init({ liffId: liffId })
+            .then(() => {
+                console.log('✅ LIFF initialized');
+                
+                // 2. ตรวจสอบการล็อกอิน
+                liff.ready.then(() => {
+                    if (!liff.isLoggedIn()) {
+                        console.log('⚠️ Not logged in - redirecting to login');
+                        statusEl.innerText = '🔐 กำลังเปลี่ยนเส้นทางไปล็อกอิน...';
+                        liff.login();
+                    } else {
+                        // 3. Get profile
+                        liff.getProfile()
+                            .then((profile) => {
+                                userId = profile.userId;
+                                userProfile = profile;
+                                
+                                document.getElementById('lineUserId').value = userId;
+                                statusEl.innerText = `✓ เชื่อมต่อ LINE แล้ว (${profile.displayName})`;
+                                statusEl.classList.add('connected');
+                                notifyBadge.classList.remove('hidden');
+                                
+                                console.log('✅ Profile loaded:', profile);
+                                console.log('📝 User ID:', userId);
+                            })
+                            .catch((error) => {
+                                console.error('❌ Error getting profile:', error);
+                                statusEl.innerText = '⚠ ไม่สามารถดึงข้อมูลโปรไฟล์';
+                                statusEl.classList.add('error');
+                            });
+                    }
+                });
+            })
+            .catch((error) => {
+                console.error('❌ LIFF init failed:', error);
+                statusEl.innerText = '⚠ ไม่สามารถเชื่อมต่อ LIFF';
+                statusEl.classList.add('error');
             });
-            
-            addDebugLog('✅ LIFF เริ่มต้นสำเร็จ');
-            addDebugLog('🔍 ตรวจสอบสถานะการล็อกอิน...');
-
-            if (!liff.isLoggedIn()) {
-                addDebugLog('⚠️ ยังไม่ได้ล็อกอิน - กำลังเปลี่ยนเส้นทางไปหน้าล็อกอิน LINE');
-                statusEl.innerText = '🔐 กำลังเปลี่ยนเส้นทางไปหน้าล็อกอิน...';
-                liff.login();
-                return;
-            }
-
-            addDebugLog('✅ ล็อกอินแล้ว - กำลังดึงข้อมูลโปรไฟล์...');
-
-            userProfile = await liff.getProfile();
-            
-            document.getElementById('lineUserId').value = userProfile.userId;
-            statusEl.innerText = `✓ เชื่อมต่อ LINE แล้ว (${userProfile.displayName})`;
-            statusEl.classList.add('connected');
-            notifyBadge.classList.remove('hidden');
-            liffInitialized = true;
-
-            addDebugLog(`✅ ดึงข้อมูลสำเร็จ - User: ${userProfile.displayName}`);
-            addDebugLog(`📝 User ID: ${userProfile.userId}`);
-
-        } catch (err) {
-            addDebugLog(`❌ เกิดข้อผิดพลาด: ${err.message}`);
-            statusEl.innerText = '⚠ ไม่สามารถเชื่อมต่อ LINE';
-            statusEl.classList.add('error');
-            console.error('LIFF Error:', err);
-            
-            // ถ้าไม่ได้เปิดผ่าน LIFF ให้ใช้โหมดทดสอบ
-            if (err.message.includes('LIFF ID')) {
-                addDebugLog('💡 ตรวจพบ: เปิดไม่ผ่าน LIFF - ใช้โหมดทดสอบ');
-                document.getElementById('lineUserId').value = 'TEST_USER';
-                statusEl.innerText = '⚠ โหมดทดสอบ (ไม่ส่ง LINE)';
-            }
-        }
     }
 
-    // เริ่มต้น LIFF เมื่อหน้าโหลดเสร็จ
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initLiff);
-    } else {
-        initLiff();
-    }
+    // เรียกใช้ main เมื่อโหลดหน้า
+    main();
 
     function updateSub(val) {
         const sub = document.getElementById('sub-opt');
@@ -509,37 +475,46 @@
         }
     }
 
-    function handleForm(form) {
+    async function handleSubmit(e) {
+        e.preventDefault();
+
+        const name = document.getElementById('name').value;
+        const phone = document.getElementById('phone').value;
+        const option = document.getElementById('main-opt').value;
+        const sub_option = document.getElementById('sub-opt').value;
+        const details = document.getElementById('details').value || '';
+
         const formData = {
-            name: form.name.value,
-            phone: form.phone.value,
-            option: form.option.value,
-            sub_option: form.sub_option.value,
-            details: form.details.value || '',
-            lineUserId: form.lineUserId.value
+            name: name,
+            phone: phone,
+            option: option,
+            sub_option: sub_option,
+            details: details,
+            lineUserId: userId
         };
 
-        addDebugLog(`📤 กำลังส่งข้อมูล: ${formData.name}, ${formData.phone}`);
+        console.log('📤 Sending data:', formData);
 
-        document.getElementById('view-name').innerText = formData.name;
-        document.getElementById('view-phone').innerText = formData.phone;
-        document.getElementById('view-activity').innerText = formData.option;
-        document.getElementById('view-sub').innerText = formData.sub_option;
+        // แสดงข้อมูลในหน้าสรุป
+        document.getElementById('view-name').innerText = name;
+        document.getElementById('view-phone').innerText = phone;
+        document.getElementById('view-activity').innerText = option;
+        document.getElementById('view-sub').innerText = sub_option;
 
+        // แสดงหน้า Loading
         document.getElementById('section-form').classList.add('hidden');
         document.getElementById('section-loading').classList.remove('hidden');
         document.getElementById('submitBtn').disabled = true;
 
+        // ส่งข้อมูลไปยัง Google Apps Script
         google.script.run
             .withSuccessHandler(function(response) {
-                addDebugLog('✅ บันทึกข้อมูลสำเร็จ');
-                console.log('Success:', response);
+                console.log('✅ Success:', response);
                 document.getElementById('section-loading').classList.add('hidden');
                 document.getElementById('section-success').classList.remove('hidden');
             })
             .withFailureHandler(function(error) {
-                addDebugLog(`❌ เกิดข้อผิดพลาด: ${error.message}`);
-                console.error('Error:', error);
+                console.error('❌ Error:', error);
                 alert("เกิดข้อผิดพลาด: " + error.message);
                 document.getElementById('section-loading').classList.add('hidden');
                 document.getElementById('section-form').classList.remove('hidden');
@@ -555,15 +530,7 @@
         document.getElementById('section-success').classList.add('hidden');
         document.getElementById('section-form').classList.remove('hidden');
         document.getElementById('submitBtn').disabled = false;
-        document.getElementById('debugInfo').innerHTML = '';
     }
-
-    <!-- 1. script axios -->
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <!-- 2. script liff sdk -->    
-    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script src="index.js"></script>
 </script>
-    
 </body>
 </html>
