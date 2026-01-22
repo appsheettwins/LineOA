@@ -295,6 +295,17 @@
             margin-top: 8px;
         }
 
+        .debug-info {
+            background: #f3f4f6;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #4b5563;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
         @media (max-width: 576px) {
             body {
                 padding: 10px;
@@ -370,10 +381,11 @@
             </button>
             
             <div class="text-center">
-                <div id="lineStatus">กำลังตรวจสอบการเชื่อมต่อ LINE...</div>
+                <div id="lineStatus">กำลังเชื่อมต่อ LINE...</div>
                 <div id="lineNotifyBadge" class="line-notify-badge hidden">
                     ✉️ จะส่งการแจ้งเตือนไปยัง LINE
                 </div>
+                <div id="debugInfo" class="debug-info hidden"></div>
             </div>
         </form>
     </div>
@@ -413,36 +425,80 @@
         'ตักบาตร': ['C1', 'C2', 'C3', 'C4', 'C5']
     };
 
+    let liffInitialized = false;
+    let userProfile = null;
+
+    function addDebugLog(message) {
+        const debugEl = document.getElementById('debugInfo');
+        debugEl.classList.remove('hidden');
+        const timestamp = new Date().toLocaleTimeString('th-TH');
+        debugEl.innerHTML += `[${timestamp}] ${message}<br>`;
+        debugEl.scrollTop = debugEl.scrollHeight;
+        console.log(message);
+    }
+
     async function initLiff() {
         const statusEl = document.getElementById('lineStatus');
         const notifyBadge = document.getElementById('lineNotifyBadge');
         
         try {
-            await liff.init({ liffId: "2008933743-UuRrgT1t" });
+            addDebugLog('🔄 เริ่มต้น LIFF...');
+            
+            // ตรวจสอบว่า LIFF SDK โหลดแล้วหรือยัง
+            if (typeof liff === 'undefined') {
+                throw new Error('LIFF SDK ไม่ถูกโหลด');
+            }
+            
+            addDebugLog('📱 กำลังเชื่อมต่อ LIFF ID: 2008933743-UuRrgT1t');
+            
+            await liff.init({ 
+                liffId: "2008933743-UuRrgT1t"
+            });
+            
+            addDebugLog('✅ LIFF เริ่มต้นสำเร็จ');
+            addDebugLog('🔍 ตรวจสอบสถานะการล็อกอิน...');
 
             if (!liff.isLoggedIn()) {
+                addDebugLog('⚠️ ยังไม่ได้ล็อกอิน - กำลังเปลี่ยนเส้นทางไปหน้าล็อกอิน LINE');
+                statusEl.innerText = '🔐 กำลังเปลี่ยนเส้นทางไปหน้าล็อกอิน...';
                 liff.login();
                 return;
             }
 
-            const profile = await liff.getProfile();
-            document.getElementById('lineUserId').value = profile.userId;
-            statusEl.innerText = '✓ เชื่อมต่อ LINE แล้ว';
+            addDebugLog('✅ ล็อกอินแล้ว - กำลังดึงข้อมูลโปรไฟล์...');
+
+            userProfile = await liff.getProfile();
+            
+            document.getElementById('lineUserId').value = userProfile.userId;
+            statusEl.innerText = `✓ เชื่อมต่อ LINE แล้ว (${userProfile.displayName})`;
             statusEl.classList.add('connected');
             notifyBadge.classList.remove('hidden');
+            liffInitialized = true;
 
-            console.log('LINE User ID:', profile.userId);
-            console.log('Display Name:', profile.displayName);
+            addDebugLog(`✅ ดึงข้อมูลสำเร็จ - User: ${userProfile.displayName}`);
+            addDebugLog(`📝 User ID: ${userProfile.userId}`);
 
         } catch (err) {
-            statusEl.innerText = '⚠ ไม่สามารถเชื่อมต่อ LINE (จะใช้โหมดทดสอบ)';
+            addDebugLog(`❌ เกิดข้อผิดพลาด: ${err.message}`);
+            statusEl.innerText = '⚠ ไม่สามารถเชื่อมต่อ LINE';
             statusEl.classList.add('error');
             console.error('LIFF Error:', err);
-            document.getElementById('lineUserId').value = 'TEST_USER';
+            
+            // ถ้าไม่ได้เปิดผ่าน LIFF ให้ใช้โหมดทดสอบ
+            if (err.message.includes('LIFF ID')) {
+                addDebugLog('💡 ตรวจพบ: เปิดไม่ผ่าน LIFF - ใช้โหมดทดสอบ');
+                document.getElementById('lineUserId').value = 'TEST_USER';
+                statusEl.innerText = '⚠ โหมดทดสอบ (ไม่ส่ง LINE)';
+            }
         }
     }
 
-    window.onload = initLiff;
+    // เริ่มต้น LIFF เมื่อหน้าโหลดเสร็จ
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initLiff);
+    } else {
+        initLiff();
+    }
 
     function updateSub(val) {
         const sub = document.getElementById('sub-opt');
@@ -463,6 +519,8 @@
             lineUserId: form.lineUserId.value
         };
 
+        addDebugLog(`📤 กำลังส่งข้อมูล: ${formData.name}, ${formData.phone}`);
+
         document.getElementById('view-name').innerText = formData.name;
         document.getElementById('view-phone').innerText = formData.phone;
         document.getElementById('view-activity').innerText = formData.option;
@@ -472,15 +530,15 @@
         document.getElementById('section-loading').classList.remove('hidden');
         document.getElementById('submitBtn').disabled = true;
 
-        console.log('Sending data:', formData);
-
         google.script.run
             .withSuccessHandler(function(response) {
+                addDebugLog('✅ บันทึกข้อมูลสำเร็จ');
                 console.log('Success:', response);
                 document.getElementById('section-loading').classList.add('hidden');
                 document.getElementById('section-success').classList.remove('hidden');
             })
             .withFailureHandler(function(error) {
+                addDebugLog(`❌ เกิดข้อผิดพลาด: ${error.message}`);
                 console.error('Error:', error);
                 alert("เกิดข้อผิดพลาด: " + error.message);
                 document.getElementById('section-loading').classList.add('hidden');
@@ -497,6 +555,7 @@
         document.getElementById('section-success').classList.add('hidden');
         document.getElementById('section-form').classList.remove('hidden');
         document.getElementById('submitBtn').disabled = false;
+        document.getElementById('debugInfo').innerHTML = '';
     }
 </script>
 </body>
